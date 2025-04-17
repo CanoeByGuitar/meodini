@@ -49,14 +49,17 @@ foreach (_Resource
     )
 endforeach()
 
-set(Sources
+file(GLOB Sources
         editor.cpp
         utilities/builders.h
         utilities/drawing.h
         utilities/widgets.h
         utilities/builders.cpp
         utilities/drawing.cpp
-        utilities/widgets.cpp)
+        utilities/widgets.cpp
+        window/*.h
+        window/*.cpp
+)
 set(Name editor)
 add_executable(${Name} ${Sources} ${CommonResources} ${Resources})
 target_link_libraries(${Name} PRIVATE imgui imgui_node_editor application)
