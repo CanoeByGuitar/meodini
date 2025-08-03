@@ -12,44 +12,42 @@ struct StateNode
     int inputPinId;
     int outputPinId;
 };
-
 struct TransitionLink
 {
     int id;
     int fromPinId;
     int toPinId;
+    char condition[64];
 };
-
 struct Example : public Application
 {
     using Application::Application;
-    void OnStart() override
-    {
+    void OnStart() override {
         ed::Config config;
         config.SettingsFile = "StateMachine.json";
         m_Context = ed::CreateEditor(&config);
         m_NextId = 1;
         AddStateNode("Idle");
         AddStateNode("Attack");
+        selectedLinkId = -1;
     }
-
-    void OnStop() override
-    {
+    void OnStop() override {
         ed::DestroyEditor(m_Context);
     }
-
-    void OnFrame(float deltaTime) override
-    {
-        auto& io = ImGui::GetIO();
-        ImGui::Text("FPS: %.2f (%.2gms)", io.Framerate, io.Framerate ? 1000.0f / io.Framerate : 0.0f);
+    void OnFrame(float deltaTime) override {
+        ImGui::Text("FPS: %.2f (%.2gms)", ImGui::GetIO().Framerate, ImGui::GetIO().Framerate ? 1000.0f / ImGui::GetIO().Framerate : 0.0f);
         ImGui::Separator();
+
+        // 左侧 Node Editor
+        ImGui::BeginChild("NodeArea", ImVec2(ImGui::GetWindowWidth()*0.65f, 0), true);
+
         ed::SetCurrentEditor(m_Context);
         ed::Begin("State Machine Editor", ImVec2(0.0, 0.0f));
         for (auto& state : m_States)
         {
             ed::BeginNode(state.id);
             ImGui::PushID(state.id);
-            ImGui::SetNextItemWidth(120);
+            ImGui::SetNextItemWidth(80);
             ImGui::InputText("##StateName", state.name, sizeof(state.name));
             ImGui::PopID();
             ed::BeginPin(state.inputPinId, ed::PinKind::Input);
@@ -63,6 +61,7 @@ struct Example : public Application
         }
         for (auto& link : m_Links)
             ed::Link(link.id, link.fromPinId, link.toPinId);
+
         if (ed::BeginCreate())
         {
             ed::PinId startPinId, endPinId;
@@ -70,15 +69,14 @@ struct Example : public Application
             {
                 if (startPinId && endPinId)
                 {
-                    bool canCreate = true;
-                    int fromPin = ((int)startPinId.AsPointer() % 2 == 0) ? startPinId.Get() : endPinId.Get();
-                    int toPin = ((int)startPinId.AsPointer() % 2 == 1) ? startPinId.Get() : endPinId.Get();
-                    if (canCreate)
+                    if (ed::AcceptNewItem())
                     {
-                        if (ed::AcceptNewItem())
-                        {
-                            m_Links.push_back({ m_NextId++, (int)startPinId.Get(), (int)endPinId.Get() });
-                        }
+                        TransitionLink link;
+                        link.id = m_NextId++;
+                        link.fromPinId = startPinId.Get();
+                        link.toPinId = endPinId.Get();
+                        link.condition[0] = 0;
+                        m_Links.push_back(link);
                     }
                 }
             }
@@ -103,9 +101,37 @@ struct Example : public Application
             AddStateNode(("State" + std::to_string(m_States.size() + 1)).c_str());
         }
         ed::End();
+
+        ImGui::EndChild();
+
+        // 右侧Detail面板
+        ImGui::SameLine();
+        ImGui::BeginChild("DetailPanel", ImVec2(0, 0), true);
+
+        int selCount = ed::GetSelectedObjectCount();
+        ed::LinkId selLinkId;
+        TransitionLink* selLink = nullptr;
+        if (selCount == 1 && ed::GetSelectedLinks(&selLinkId, 1))
+        {
+            int linkid = selLinkId.Get();
+            for (auto& link : m_Links)
+                if (link.id == linkid)
+                    selLink = &link;
+        }
+        if (selLink) {
+            ImGui::Text("Selected Transition");
+            ImGui::Separator();
+            ImGui::Text("ID: %d", selLink->id);
+            ImGui::Text("From Pin: %d", selLink->fromPinId);
+            ImGui::Text("To Pin: %d", selLink->toPinId);
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("Condition", selLink->condition, sizeof(selLink->condition));
+        } else {
+            ImGui::Text("No Transition Selected.");
+        }
+        ImGui::EndChild();
         ed::SetCurrentEditor(nullptr);
     }
-
     void AddStateNode(const char* name)
     {
         int nodeId = m_NextId++;
@@ -119,13 +145,12 @@ struct Example : public Application
         node.outputPinId = outputPinId;
         m_States.push_back(node);
     }
-
     ed::EditorContext* m_Context = nullptr;
     int m_NextId = 1;
     std::vector<StateNode> m_States;
     std::vector<TransitionLink> m_Links;
+    int selectedLinkId = -1;
 };
-
 int main(int argc, char** argv)
 {
     Example exampe("StateMachineNodeTool", argc, argv);
