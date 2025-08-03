@@ -3,6 +3,11 @@
 #include <application.h>
 #include <vector>
 #include <string>
+#include <nlohmann/json.hpp>
+#include <fstream>
+
+using json = nlohmann::json;
+
 namespace ed = ax::NodeEditor;
 
 struct StateNode
@@ -100,6 +105,15 @@ struct Example : public Application
         {
             AddStateNode(("State" + std::to_string(m_States.size() + 1)).c_str());
         }
+        if (ImGui::Button("Save Graph"))
+        {
+            SaveGraphJson("graph.json");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load Graph"))
+        {
+            LoadGraphJson("graph.json");
+        }
         ed::End();
 
         ImGui::EndChild();
@@ -132,6 +146,7 @@ struct Example : public Application
         ImGui::EndChild();
         ed::SetCurrentEditor(nullptr);
     }
+
     void AddStateNode(const char* name)
     {
         int nodeId = m_NextId++;
@@ -145,6 +160,67 @@ struct Example : public Application
         node.outputPinId = outputPinId;
         m_States.push_back(node);
     }
+
+    void SaveGraphJson(const char* filename)
+    {
+        json j;
+        for (const auto& node : m_States)
+        {
+            j["states"].push_back({
+                {"id", node.id},
+                {"name", node.name},
+                {"inputPinId", node.inputPinId},
+                {"outputPinId", node.outputPinId}
+            });
+        }
+        for (const auto& link : m_Links)
+        {
+            j["links"].push_back({
+                {"id", link.id},
+                {"fromPinId", link.fromPinId},
+                {"toPinId", link.toPinId},
+                {"condition", link.condition}
+            });
+        }
+        j["next_id"] = m_NextId;
+        std::ofstream fs(filename);
+        fs << j.dump(4);
+    }
+
+    void LoadGraphJson(const char* filename)
+    {
+        std::ifstream fs(filename);
+        if (!fs) return;
+        json j;
+        fs >> j;
+        m_States.clear();
+        for (auto& js : j["states"])
+        {
+            StateNode node;
+            node.id = js["id"];
+            strncpy(node.name, js["name"].get<std::string>().c_str(), sizeof(node.name));
+            node.name[sizeof(node.name)-1] = 0;
+            node.inputPinId = js["inputPinId"];
+            node.outputPinId = js["outputPinId"];
+            m_States.push_back(node);
+        }
+        m_Links.clear();
+        for (auto& jl : j["links"])
+        {
+            TransitionLink link;
+            link.id = jl["id"];
+            link.fromPinId = jl["fromPinId"];
+            link.toPinId = jl["toPinId"];
+            strncpy(link.condition, jl["condition"].get<std::string>().c_str(), sizeof(link.condition));
+            link.condition[sizeof(link.condition)-1] = 0;
+            m_Links.push_back(link);
+        }
+        if (j.contains("next_id"))
+            m_NextId = j["next_id"];
+    }
+
+
+
     ed::EditorContext* m_Context = nullptr;
     int m_NextId = 1;
     std::vector<StateNode> m_States;

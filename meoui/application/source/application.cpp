@@ -3,6 +3,7 @@
 # include "platform.h"
 # include "renderer.h"
 
+
 extern "C" {
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC

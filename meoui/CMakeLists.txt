@@ -146,6 +146,7 @@ set(Sources
 set(Name FSM)
 add_executable(${Name} ${Sources} ${CommonResources} ${Resources})
 target_link_libraries(${Name} PRIVATE imgui imgui_node_editor application)
+target_include_directories(${Name} PRIVATE ${CMAKE_SOURCE_DIR}/external)
 # copy resources
 set(BinDir ${CMAKE_BINARY_DIR}/meoui/Release)
 add_custom_command(
