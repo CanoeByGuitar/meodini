@@ -1201,6 +1201,7 @@ struct NodeBuilder
     void BeginPin(PinId pinId, PinKind kind);
     void EndPin();
 
+    ImVec2 GetPinPosition(PinId pinId, PinKind kind);
     void PinRect(const ImVec2& a, const ImVec2& b);
     void PinPivotRect(const ImVec2& a, const ImVec2& b);
     void PinPivotSize(const ImVec2& size);

@@ -1,13 +1,16 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
-#include <imgui_node_editor.h>
-#include <application.h>
-#include <vector>
-#include <string>
+#include "imgui_internal.h"
+
 #include <nlohmann/json.hpp>
+
+#include <application.h>
 #include <fstream>
 
+#include <imgui_node_editor.h>
+#include <string>
+#include <vector>
 using json = nlohmann::json;
-
 namespace ed = ax::NodeEditor;
 
 struct StateNode
@@ -16,14 +19,21 @@ struct StateNode
     char name[32];
     int inputPinId;
     int outputPinId;
+
+    int leftInputPin, leftOutputPin;
+    int topInputPin, topOutputPin;
+    int rightInputPin, rightOutputPin;
+    int bottomInputPin, bottomOutputPin;
 };
+
 struct TransitionLink
 {
     int id;
     int fromPinId;
     int toPinId;
-    char condition[64];
+    char condition[256];
 };
+
 struct Example : public Application
 {
     using Application::Application;
@@ -42,30 +52,76 @@ struct Example : public Application
     void OnFrame(float deltaTime) override {
         ImGui::Text("FPS: %.2f (%.2gms)", ImGui::GetIO().Framerate, ImGui::GetIO().Framerate ? 1000.0f / ImGui::GetIO().Framerate : 0.0f);
         ImGui::Separator();
-
         // 左侧 Node Editor
-        ImGui::BeginChild("NodeArea", ImVec2(ImGui::GetWindowWidth()*0.65f, 0), true);
-
+        ImGui::BeginChild("NodeArea", ImVec2(ImGui::GetWindowWidth()*0.8f, 0), true);
         ed::SetCurrentEditor(m_Context);
         ed::Begin("State Machine Editor", ImVec2(0.0, 0.0f));
+
+        ed::PushStyleVar(ed::StyleVar_LinkStrength, 0.0f);
         for (auto& state : m_States)
         {
             ed::BeginNode(state.id);
+
+            ImGui::BeginGroup();
+            ed::BeginPin(state.leftInputPin, ed::PinKind::Input);
+            ImGui::Text(">> In");
+            ed::EndPin();
+            ed::BeginPin(state.leftOutputPin, ed::PinKind::Output);
+            ImGui::Text("<< Out");
+            ed::EndPin();
+            ImGui::EndGroup();
+
+
+            ImGui::SameLine();
+
             ImGui::PushID(state.id);
             ImGui::SetNextItemWidth(80);
             ImGui::InputText("##StateName", state.name, sizeof(state.name));
             ImGui::PopID();
-            ed::BeginPin(state.inputPinId, ed::PinKind::Input);
-            ImGui::Text(">> In");
-            ed::EndPin();
+
             ImGui::SameLine();
-            ed::BeginPin(state.outputPinId, ed::PinKind::Output);
+
+            ImGui::BeginGroup();
+            ed::BeginPin(state.rightInputPin, ed::PinKind::Input);
+            ImGui::Text("In <<");
+            ed::EndPin();
+            ed::BeginPin(state.rightOutputPin, ed::PinKind::Output);
             ImGui::Text("Out >>");
             ed::EndPin();
+            ImGui::EndGroup();
+
+
             ed::EndNode();
         }
+
         for (auto& link : m_Links)
+        {
+            ImVec2 p1 = ed::GetPinPosition(link.fromPinId, ed::PinKind::Output);
+            ImVec2 p2 = ed::GetPinPosition(link.toPinId, ed::PinKind::Input);
+            ImVec2 screen1 = ed::CanvasToScreen(p1);
+            ImVec2 screen2 = ed::CanvasToScreen(p2);
+
+            ImVec2 mid = (screen1 + screen2) * 0.5f;
+            ImVec2 dir = screen2 - screen1;
+            float len = sqrt(dir.x*dir.x + dir.y*dir.y);
+            if(len < 1e-3f) continue;
+            dir.x /= len; dir.y /= len;
+
+            float arrow_length = 14.0f;
+            float arrow_width  = 8.0f;
+
+            ImVec2 tip = mid + ImVec2(dir.x * arrow_length/2, dir.y*arrow_length/2);
+            ImVec2 ortho(-dir.y, dir.x); // 旋转90度为垂直
+            ImVec2 left = mid - dir*arrow_length/2 + ortho*arrow_width/2;
+            ImVec2 right = mid - dir*arrow_length/2 - ortho*arrow_width/2;
+
+            ImDrawList* draw_list = ImGui::GetForegroundDrawList(); // 推荐用前景drawlist
+            draw_list->AddTriangleFilled(tip, left, right, IM_COL32(220,120,50,200));
+
             ed::Link(link.id, link.fromPinId, link.toPinId);
+        }
+
+        ed::PopStyleVar();
 
         if (ed::BeginCreate())
         {
@@ -87,6 +143,7 @@ struct Example : public Application
             }
         }
         ed::EndCreate();
+
         if (ed::BeginDelete())
         {
             ed::LinkId linkId = 0;
@@ -101,6 +158,7 @@ struct Example : public Application
             }
             ed::EndDelete();
         }
+
         if (ImGui::Button("Add State"))
         {
             AddStateNode(("State" + std::to_string(m_States.size() + 1)).c_str());
@@ -114,14 +172,16 @@ struct Example : public Application
         {
             LoadGraphJson("graph.json");
         }
-        ed::End();
+        if (ImGui::Button("Generate Runtime Json"))
+        {
 
+        }
+        ed::End();
         ImGui::EndChild();
 
         // 右侧Detail面板
         ImGui::SameLine();
         ImGui::BeginChild("DetailPanel", ImVec2(0, 0), true);
-
         int selCount = ed::GetSelectedObjectCount();
         ed::LinkId selLinkId;
         TransitionLink* selLink = nullptr;
@@ -150,14 +210,18 @@ struct Example : public Application
     void AddStateNode(const char* name)
     {
         int nodeId = m_NextId++;
-        int inputPinId = m_NextId++;
-        int outputPinId = m_NextId++;
         StateNode node;
         node.id = nodeId;
         strncpy(node.name, name, sizeof(node.name));
         node.name[sizeof(node.name)-1] = 0;
-        node.inputPinId = inputPinId;
-        node.outputPinId = outputPinId;
+        node.leftInputPin = m_NextId++;
+        node.leftOutputPin = m_NextId++;
+        node.topInputPin = m_NextId++;
+        node.topOutputPin = m_NextId++;
+        node.rightInputPin = m_NextId++;
+        node.rightOutputPin = m_NextId++;
+        node.bottomInputPin = m_NextId++;
+        node.bottomOutputPin = m_NextId++;
         m_States.push_back(node);
     }
 
@@ -169,8 +233,14 @@ struct Example : public Application
             j["states"].push_back({
                 {"id", node.id},
                 {"name", node.name},
-                {"inputPinId", node.inputPinId},
-                {"outputPinId", node.outputPinId}
+                {"leftInputPin", node.leftInputPin},
+                {"leftOutputPin", node.leftOutputPin},
+                {"topInputPin", node.topInputPin},
+                {"topOutputPin", node.topOutputPin},
+                {"rightInputPin", node.rightInputPin},
+                {"rightOutputPin", node.rightOutputPin},
+                {"bottomInputPin", node.bottomInputPin},
+                {"bottomOutputPin", node.bottomOutputPin}
             });
         }
         for (const auto& link : m_Links)
@@ -200,8 +270,14 @@ struct Example : public Application
             node.id = js["id"];
             strncpy(node.name, js["name"].get<std::string>().c_str(), sizeof(node.name));
             node.name[sizeof(node.name)-1] = 0;
-            node.inputPinId = js["inputPinId"];
-            node.outputPinId = js["outputPinId"];
+            node.leftInputPin = js["leftInputPin"];
+            node.leftOutputPin = js["leftOutputPin"];
+            node.topInputPin = js["topInputPin"];
+            node.topOutputPin = js["topOutputPin"];
+            node.rightInputPin = js["rightInputPin"];
+            node.rightOutputPin = js["rightOutputPin"];
+            node.bottomInputPin = js["bottomInputPin"];
+            node.bottomOutputPin = js["bottomOutputPin"];
             m_States.push_back(node);
         }
         m_Links.clear();
@@ -219,14 +295,13 @@ struct Example : public Application
             m_NextId = j["next_id"];
     }
 
-
-
     ed::EditorContext* m_Context = nullptr;
     int m_NextId = 1;
     std::vector<StateNode> m_States;
     std::vector<TransitionLink> m_Links;
     int selectedLinkId = -1;
 };
+
 int main(int argc, char** argv)
 {
     Example exampe("StateMachineNodeTool", argc, argv);

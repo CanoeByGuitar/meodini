@@ -5375,6 +5375,14 @@ void ed::NodeBuilder::BeginPin(PinId pinId, PinKind kind)
     ImGui::BeginGroup();
 }
 
+ImVec2 ed::NodeBuilder::GetPinPosition(PinId pinId, PinKind kind)
+{
+    m_CurrentPin = Editor->GetPin(pinId, kind);
+    auto bounds = m_CurrentPin->m_Bounds;
+    return bounds.GetCenter();
+}
+
+
 void ed::NodeBuilder::EndPin()
 {
     IM_ASSERT(nullptr != m_CurrentPin);

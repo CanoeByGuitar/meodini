@@ -153,6 +153,11 @@ void ax::NodeEditor::BeginPin(PinId id, PinKind kind)
     s_Editor->GetNodeBuilder().BeginPin(id, kind);
 }
 
+ImVec2 ax::NodeEditor::GetPinPosition(PinId id, PinKind kind)
+{
+    return s_Editor->GetNodeBuilder().GetPinPosition(id, kind);
+}
+
 void ax::NodeEditor::PinRect(const ImVec2& a, const ImVec2& b)
 {
     s_Editor->GetNodeBuilder().PinRect(a, b);
