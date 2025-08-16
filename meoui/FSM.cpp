@@ -1,17 +1,65 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
+
 #include <imgui.h>
 #include "imgui_internal.h"
 
 #include <nlohmann/json.hpp>
-
 #include <application.h>
 #include <fstream>
 
 #include <imgui_node_editor.h>
-#include <string>
+#include <iostream>
+#include <string.h>
+#include <thread>
 #include <vector>
+#include <windows.h>
+
+
 using json = nlohmann::json;
 namespace ed = ax::NodeEditor;
+
+class MemoryMappedReader
+{
+public:
+    MemoryMappedReader() = default;
+    MemoryMappedReader(const std::string& mapName, size_t size = 256)
+            : hMap(nullptr), pBuf(nullptr), mapName_(mapName), size_(size) {}
+
+    ~MemoryMappedReader() {
+        if (pBuf) UnmapViewOfFile(pBuf);
+        if (hMap) CloseHandle(hMap);
+    }
+
+    bool open()
+    {
+        hMap = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, mapName_.c_str());
+        if (!hMap)
+        {
+            std::cout << GetLastError() << std::endl;
+            return false;
+        }
+        pBuf = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, size_);
+        return pBuf != nullptr;
+    }
+
+    std::string readStringAndClear() {
+        if (!pBuf) return "";
+        unsigned char len = *((unsigned char*)pBuf);
+        if (len == 0)
+            return ""; // 没有新消息
+        const char* raw = (const char*)pBuf + 1;
+        std::string result(raw, raw + len);
+        *((unsigned char*)pBuf) = 0; // 读完后清零，防止重复读取
+        return result;
+    }
+
+
+private:
+    HANDLE hMap;
+    LPVOID pBuf;
+    std::string mapName_;
+    size_t size_;
+};
 
 struct StateNode
 {
@@ -36,6 +84,8 @@ struct TransitionLink
 
 struct Example : public Application
 {
+
+
     using Application::Application;
     void OnStart() override {
         ed::Config config;
@@ -45,6 +95,12 @@ struct Example : public Application
         AddStateNode("Idle");
         AddStateNode("Attack");
         selectedLinkId = -1;
+
+        m_Reader = MemoryMappedReader("SharedMemory");
+        if (!m_Reader.open())
+        {
+            std::cout << "Faild to open mapping" << std::endl;
+        }
     }
     void OnStop() override {
         ed::DestroyEditor(m_Context);
@@ -204,6 +260,20 @@ struct Example : public Application
             ImGui::Text("No Transition Selected.");
         }
         ImGui::EndChild();
+
+        std::string msg = m_Reader.readStringAndClear();
+        if (!msg.empty()) {
+            std::cout << "Received from Unity: " << msg << std::endl;
+            m_Name2Id.clear();
+            for (const auto& state : m_States)
+            {
+                std::string name = state.name;
+                int id = state.id;
+                m_Name2Id[name] = id;
+            }
+            ed::SelectNode(m_Name2Id[msg]);
+        }
+
         ed::SetCurrentEditor(nullptr);
     }
 
@@ -222,6 +292,8 @@ struct Example : public Application
         node.rightOutputPin = m_NextId++;
         node.bottomInputPin = m_NextId++;
         node.bottomOutputPin = m_NextId++;
+
+        // m_Name2Id[node.name] = nodeId;
         m_States.push_back(node);
     }
 
@@ -300,7 +372,12 @@ struct Example : public Application
     std::vector<StateNode> m_States;
     std::vector<TransitionLink> m_Links;
     int selectedLinkId = -1;
+    std::unordered_map<std::string, int> m_Name2Id;
+    MemoryMappedReader m_Reader;
 };
+
+
+
 
 int main(int argc, char** argv)
 {
